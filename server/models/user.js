@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 
 const userSchema = new mongoose.Schema(
     {
@@ -72,6 +73,15 @@ userSchema.methods = {
     isCorrectPassword: async function (password) {
         // So sánh password và kiểm tra coi đúng chưa
         return await bcrypt.compare(password, this.password);
+    },
+    createChangePasswordToken: function () {
+        const refreshToken = crypto.randomBytes(32).toString("hex");
+        this.passwordResetToken = crypto
+            .createHash("sha256")
+            .update(refreshToken)
+            .digest("hex");
+        this.passwordResetExpires = Date.now() + 15 * 60 * 1000;
+        return refreshToken;
     },
 };
 
