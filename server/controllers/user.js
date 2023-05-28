@@ -32,7 +32,6 @@ const register = asyncHandler(async (req, res) => {
 
 // Refresh Token => Cấp mới access token
 // Access token => Xác thực và phân quyền người dùng (Authentication and Authorization)
-
 const login = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
 
@@ -50,21 +49,22 @@ const login = asyncHandler(async (req, res) => {
 
     if (response && (await response.isCorrectPassword(password))) {
         // Tách password và role ra khỏi response
-        const { password, role, ...userData } = response.toObject();
+        const { password, role, refreshToken, ...userData } =
+            response.toObject();
         // Tạo access token
         const accessToken = generateAccessToken(response._id, role);
         // Tạo refresh token
-        const refreshToken = generateRefreshToken(response._id);
+        const newRefreshToken = generateRefreshToken(response._id);
 
         // Lưu refresh token vào db
         await User.findByIdAndUpdate(
             response._id,
-            { refreshToken },
+            { refreshToken: newRefreshToken },
             { new: true }
         );
 
         // Lưu refresh token vào cookie
-        res.cookie("refreshToken", refreshToken, {
+        res.cookie("refreshToken", newRefreshToken, {
             httpOnly: true,
             maxAge: 1000 * 60 * 60 * 24 * 7, // chuyển đổi 7 ngày thành miliseconds ^^
         });
@@ -77,17 +77,6 @@ const login = asyncHandler(async (req, res) => {
     } else {
         throw new Error("Login failed! :<");
     }
-});
-
-const getCurrent = asyncHandler(async (req, res) => {
-    const { _id } = req.user;
-    const userCurrent = await User.findById(_id).select(
-        "-refreshToken -role -password"
-    );
-    return res.status(200).json({
-        success: true,
-        response: userCurrent ? userCurrent : "User not found!",
-    });
 });
 
 const refreshAccessToken = asyncHandler(async (req, res) => {
@@ -199,12 +188,80 @@ const resetPassword = asyncHandler(async (req, res) => {
     });
 });
 
+// =============== API USER ================
+const getUserById = asyncHandler(async (req, res) => {
+    const { _id } = req.user;
+    const userCurrent = await User.findById(_id).select(
+        "-refreshToken -role -password"
+    );
+    return res.status(200).json({
+        success: userCurrent ? true : false,
+        response: userCurrent ? userCurrent : "User not found!",
+    });
+});
+
+const getAllUsers = asyncHandler(async (req, res) => {
+    const response = await User.find().select("-refreshToken -role -password");
+
+    return res.status(200).json({
+        success: response ? true : false,
+        users: response,
+    });
+});
+
+const deleteUser = asyncHandler(async (req, res) => {
+    const { _id } = req.query;
+    if (!_id) throw new Error("Missing input");
+
+    const response = await User.findByIdAndDelete(_id);
+
+    return res.status(200).json({
+        success: response ? true : false,
+        deletedUser: response
+            ? `User with email ${response.email} deleted successfully`
+            : "Delete user failed!",
+    });
+});
+
+const updateUser = asyncHandler(async (req, res) => {
+    const { _id } = req.user;
+    if (!_id || Object.keys(req.body).length === 0)
+        throw new Error("Missing input");
+
+    const response = await User.findByIdAndUpdate(_id, req.body, {
+        new: true,
+    }).select("-role -password -refreshToken");
+
+    return res.status(200).json({
+        success: response ? true : false,
+        updatedUser: response ? response : "Update user failed!",
+    });
+});
+
+const updateUserByAdmin = asyncHandler(async (req, res) => {
+    const { uid } = req.params;
+    if (Object.keys(req.body).length === 0) throw new Error("Missing input");
+
+    const response = await User.findByIdAndUpdate(uid, req.body, {
+        new: true,
+    }).select("-role -password -refreshToken");
+
+    return res.status(200).json({
+        success: response ? true : false,
+        updatedUser: response ? response : "Update user failed!",
+    });
+});
+
 module.exports = {
     register,
     login,
-    getCurrent,
+    getUserById,
     refreshAccessToken,
     logout,
     forgotPassword,
     resetPassword,
+    getAllUsers,
+    deleteUser,
+    updateUser,
+    updateUserByAdmin,
 };
